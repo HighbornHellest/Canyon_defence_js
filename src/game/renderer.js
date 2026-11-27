@@ -1,4 +1,4 @@
-// Pure HTML5 Canvas 2D renderer using extracted original Flash sprites & layered canyon maps
+// Pure HTML5 Canvas 2D renderer using packed sprite atlas & layered canyon maps
 
 import {
   ABILITY_TYPE,
@@ -26,111 +26,96 @@ const TURRET_WITH_BASE = new Set([
 
 export class GameRenderer {
   constructor(onAssetsUpdate = null) {
-    this.images = new Map();
+    this.mapImages = new Map();
+    this.atlasImg = null;
+    this.atlasFrames = null;
     this.onAssetsUpdate = onAssetsUpdate;
     this._pendingRedraw = false;
     this._preloadAllAssets();
   }
 
-  _loadImage(key, src) {
-    if (this.images.has(key)) return this.images.get(key);
-    const img = new Image();
-    const entry = { img, loaded: false, error: false };
-    img.onload = () => {
-      entry.loaded = true;
-      if (this.onAssetsUpdate && !this._pendingRedraw) {
-        this._pendingRedraw = true;
-        requestAnimationFrame(() => {
-          this._pendingRedraw = false;
-          this.onAssetsUpdate();
-        });
-      }
-    };
-    img.onerror = () => {
-      entry.error = true;
-    };
-    img.src = src;
-    this.images.set(key, entry);
-    return entry;
+  _notifyUpdate() {
+    if (this.onAssetsUpdate && !this._pendingRedraw) {
+      this._pendingRedraw = true;
+      requestAnimationFrame(() => {
+        this._pendingRedraw = false;
+        this.onAssetsUpdate();
+      });
+    }
   }
 
-  _getImg(key) {
-    const entry = this.images.get(key);
+  _loadMapImage(key, src) {
+    const img = new Image();
+    const entry = { img, loaded: false };
+    img.onload = () => {
+      entry.loaded = true;
+      this._notifyUpdate();
+    };
+    img.src = src;
+    this.mapImages.set(key, entry);
+  }
+
+  _getMapImg(key) {
+    const entry = this.mapImages.get(key);
     return entry && entry.loaded ? entry.img : null;
+  }
+
+  _getFrame(key) {
+    if (!this.atlasImg || !this.atlasFrames) return null;
+    return this.atlasFrames[key] || null;
+  }
+
+  _drawFrameCentered(ctx, key, cx = 0, cy = 0, scale = 1) {
+    const f = this._getFrame(key);
+    if (!f) return false;
+    const [sx, sy, sw, sh] = f;
+    const dw = sw * scale;
+    const dh = sh * scale;
+    ctx.drawImage(this.atlasImg, sx, sy, sw, sh, cx - dw / 2, cy - dh / 2, dw, dh);
+    return true;
+  }
+
+  _drawFrameBox(ctx, key, dx, dy, dw, dh) {
+    const f = this._getFrame(key);
+    if (!f) return false;
+    const [sx, sy, sw, sh] = f;
+    ctx.drawImage(this.atlasImg, sx, sy, sw, sh, dx, dy, dw, dh);
+    return true;
   }
 
   _preloadAllAssets() {
     for (const id of [1, 2, 3]) {
-      this._loadImage(`map_sand_${id}`, `/assets/canyon/maps/map${id}_sand.png`);
-      this._loadImage(`map_land_${id}`, `/assets/canyon/maps/map${id}_landscape.png`);
+      this._loadMapImage(`map_sand_${id}`, `/assets/canyon/maps/map${id}_sand.png`);
+      this._loadMapImage(`map_land_${id}`, `/assets/canyon/maps/map${id}_landscape.png`);
     }
 
-    this._loadImage('wall', '/assets/canyon/buildings/wall.png');
-    this._loadImage('wall_shadow', '/assets/canyon/buildings/wall_shadow.png');
+    const atlasImg = new Image();
+    let imgReady = false;
+    let jsonReady = false;
 
-    for (let id = 1; id <= 15; id++) {
-      this._loadImage(`c_${id}`, `/assets/canyon/buildings/c${id}.png`);
-    }
-    for (const id of TURRET_WITH_BASE) {
-      this._loadImage(`t_base_${id}`, `/assets/canyon/guns/t${id}_a.png`);
-      this._loadImage(`t_gun_${id}`, `/assets/canyon/guns/t${id}_gun.png`);
-    }
-
-    for (let id = 1; id <= 7; id++) {
-      this._loadImage(`e_${id}`, `/assets/canyon/enemies/e${id}.png`);
-    }
-
-    for (let tab = 1; tab <= 2; tab++) {
-      for (let slot = 1; slot <= 5; slot++) {
-        this._loadImage(`btn_t_${tab}_${slot}`, `/assets/canyon/ui/btn_tower_${tab}_${slot}.png`);
+    const maybeReady = () => {
+      if (imgReady && jsonReady) {
+        this.atlasImg = atlasImg;
+        this._notifyUpdate();
       }
-    }
-    for (let slot = 1; slot <= 5; slot++) {
-      this._loadImage(`btn_s_${slot}`, `/assets/canyon/ui/btn_structure_${slot}.png`);
-    }
-    for (let ab = 1; ab <= 4; ab++) {
-      this._loadImage(`btn_ab_${ab}`, `/assets/canyon/ui/btn_ability_${ab}.png`);
-    }
-
-    this._loadImage('blast_1', '/assets/canyon/blasts/blast1.png');
-    for (let f = 1; f <= 12; f++) {
-      this._loadImage(`blast_2_${f}`, `/assets/canyon/blasts/blast2_${f}.png`);
-    }
-    this._loadImage('blast_3', '/assets/canyon/blasts/blast3.png');
-    for (let f = 1; f <= 3; f++) {
-      this._loadImage(`blast_5_${f}`, `/assets/canyon/blasts/blast5_${f}.png`);
-      this._loadImage(`blast_8_${f}`, `/assets/canyon/blasts/blast8_${f}.png`);
-    }
-    this._loadImage('blast_9', '/assets/canyon/blasts/blast9.png');
-    this._loadImage('blast_11', '/assets/canyon/blasts/blast11.png');
-
-    const gfxFrames = {
-      aablast: 4,
-      electricfield: 4,
-      explosion_big: 15,
-      explosion_medium: 9,
-      explosion_small: 9,
-      missileblast: 6,
-      slowsplash: 4,
-      splash: 4,
     };
-    for (const [name, count] of Object.entries(gfxFrames)) {
-      for (let f = 1; f <= count; f++) {
-        this._loadImage(`gfx_${name}_${f}`, `/assets/canyon/gfx/${name}/${f}.png`);
-      }
-    }
 
-    const effectFrames = {
-      fast: 3,
-      repair: 3,
-      shield: 10,
-      slow: 11,
+    atlasImg.onload = () => {
+      imgReady = true;
+      maybeReady();
     };
-    for (const [name, count] of Object.entries(effectFrames)) {
-      for (let f = 1; f <= count; f++) {
-        this._loadImage(`ef_${name}_${f}`, `/assets/canyon/effects/${name}/${f}.png`);
-      }
-    }
+    atlasImg.src = '/assets/canyon/sprites.png';
+
+    fetch('/assets/canyon/sprites.json')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && data.frames) {
+          this.atlasFrames = data.frames;
+          jsonReady = true;
+          maybeReady();
+        }
+      })
+      .catch(() => {});
   }
 
   renderMapPreview(canvas, mapId) {
@@ -139,8 +124,8 @@ export class GameRenderer {
     const h = canvas.height;
     ctx.clearRect(0, 0, w, h);
 
-    const sand = this._getImg(`map_sand_${mapId}`);
-    const land = this._getImg(`map_land_${mapId}`);
+    const sand = this._getMapImg(`map_sand_${mapId}`);
+    const land = this._getMapImg(`map_land_${mapId}`);
     if (sand && land) {
       ctx.drawImage(sand, 0, 0, w, h);
       ctx.drawImage(land, 0, 0, w, h);
@@ -148,7 +133,6 @@ export class GameRenderer {
       return;
     }
 
-    // Immediate crisp fallback while PNGs decode
     const def = MAPS[mapId] || MAPS[1];
     const cw = w / MATRIX_WIDTH;
     const ch = h / MATRIX_HEIGHT;
@@ -211,7 +195,7 @@ export class GameRenderer {
     ctx.clearRect(0, 0, PLAYFIELD_SIZE, PLAYFIELD_SIZE);
 
     // Layer 1: Desert sand floor
-    const sand = this._getImg(`map_sand_${mapId}`);
+    const sand = this._getMapImg(`map_sand_${mapId}`);
     if (sand) {
       ctx.drawImage(sand, 0, 0, PLAYFIELD_SIZE, PLAYFIELD_SIZE);
     } else {
@@ -219,28 +203,27 @@ export class GameRenderer {
       ctx.fillRect(0, 0, PLAYFIELD_SIZE, PLAYFIELD_SIZE);
     }
 
-    // Subtle entry & exit indicators on sand border
     this._drawEntryExitMarkers(ctx, map.mapDef.grid, 1);
 
     // Layer 2a: Wall shadows onto sand
-    const wallShadow = this._getImg('wall_shadow');
+    const wsFrame = this._getFrame('wall_shadow');
     for (const w of map.walls) {
       const wx = w.j * MATRIX_CELL_WIDTH;
       const wy = w.i * MATRIX_CELL_HEIGHT;
-      if (wallShadow) {
-        ctx.drawImage(wallShadow, wx - 1, wy - 1);
+      if (wsFrame) {
+        this._drawFrameBox(ctx, 'wall_shadow', wx - 1, wy - 1, wsFrame[2], wsFrame[3]);
       } else {
         ctx.fillStyle = 'rgba(20, 12, 6, 0.36)';
         ctx.fillRect(wx + 4, wy + 5, MATRIX_CELL_WIDTH - 2, MATRIX_CELL_HEIGHT - 2);
       }
     }
 
-    // Layer 2b: Walls (rendered below landscape cliff edges & buildings)
+    // Layer 2b: Walls
     for (const w of map.walls) {
       this._drawWallTile(ctx, w.j * MATRIX_CELL_WIDTH, w.i * MATRIX_CELL_HEIGHT);
     }
 
-    // Layer 2c: Ground effects & Ground enemies (so cliff overhangs overlap units naturally)
+    // Layer 2c: Ground effects & Ground enemies (under cliff overhangs)
     for (const fx of map.gfx) {
       if (fx.altitude !== ALTITUDE_AIR) {
         this._drawGfx(ctx, fx);
@@ -251,7 +234,7 @@ export class GameRenderer {
     }
 
     // Layer 3: Canyon rock plateaus & cliff shadows
-    const landscape = this._getImg(`map_land_${mapId}`);
+    const landscape = this._getMapImg(`map_land_${mapId}`);
     if (landscape) {
       ctx.drawImage(landscape, 0, 0, PLAYFIELD_SIZE, PLAYFIELD_SIZE);
     }
@@ -286,7 +269,7 @@ export class GameRenderer {
       this._drawBlast(ctx, blast, animTick);
     }
 
-    // Layer 7: Air enemies (above buildings & blasts)
+    // Layer 7: Air enemies
     for (const enemy of map.airEnemies) {
       this._drawEnemy(ctx, enemy, animTick);
     }
@@ -306,7 +289,6 @@ export class GameRenderer {
       this._drawHealthBar(ctx, enemy);
     }
 
-    // Hovered tower range ring
     if (game.hoveredBuilding && game.hoveredBuilding.isTower && game.cursor.mode === 'clear' && !game.paused) {
       this._drawRangeRing(
         ctx,
@@ -317,14 +299,12 @@ export class GameRenderer {
       );
     }
 
-    // Layer 10: Placement / ability cursor
+    // Layer 10: Cursor ghost
     this._drawCursor(ctx, game, animTick);
   }
 
   _drawWallTile(ctx, wx, wy) {
-    const wallImg = this._getImg('wall');
-    if (wallImg) {
-      ctx.drawImage(wallImg, wx, wy, MATRIX_CELL_WIDTH, MATRIX_CELL_HEIGHT);
+    if (this._drawFrameBox(ctx, 'wall', wx, wy, MATRIX_CELL_WIDTH, MATRIX_CELL_HEIGHT)) {
       return;
     }
     ctx.save();
@@ -340,24 +320,17 @@ export class GameRenderer {
     ctx.clearRect(0, 0, w, h);
 
     const meta = BUILDING_META[type];
-    let img = null;
+    let key = null;
     if (meta) {
-      if (meta.tab === 1) img = this._getImg(`btn_t_1_${meta.slot}`);
-      else if (meta.tab === 2) img = this._getImg(`btn_t_2_${meta.slot}`);
-      else if (meta.tab === 3) img = this._getImg(`btn_s_${meta.slot}`);
+      if (meta.tab === 1) key = `btn_t_1_${meta.slot}`;
+      else if (meta.tab === 2) key = `btn_t_2_${meta.slot}`;
+      else if (meta.tab === 3) key = `btn_s_${meta.slot}`;
     }
 
-    if (img) {
-      // Original Flash button art packs the 50x50 thumbnail on the left side at (1, 1)
-      ctx.drawImage(img, 1, 1, 50, 50, 0, 0, w, h);
+    if (key && this._drawFrameBox(ctx, key, 0, 0, w, h)) {
       return;
     }
-
-    // Fallback while PNGs finish loading
-    const cImg = this._getImg(`c_${type}`);
-    if (cImg) {
-      ctx.drawImage(cImg, 2, 2, w - 4, h - 4);
-    }
+    this._drawFrameBox(ctx, `c_${type}`, 2, 2, w - 4, h - 4);
   }
 
   drawAbilityIcon(canvas, type) {
@@ -366,10 +339,7 @@ export class GameRenderer {
     const h = canvas.height;
     ctx.clearRect(0, 0, w, h);
 
-    const img = this._getImg(`btn_ab_${type}`);
-    if (img) {
-      // Ability icon square sits at center (29, 29, 41, 40) inside 99x99 sprite
-      ctx.drawImage(img, 29, 29, 41, 40, 0, 0, w, h);
+    if (this._drawFrameBox(ctx, `btn_ab_${type}`, 0, 0, w, h)) {
       return;
     }
 
@@ -387,34 +357,25 @@ export class GameRenderer {
     const recoil = recoilFrames > 0 ? 1.8 : 0;
 
     if (TURRET_WITH_BASE.has(type)) {
-      const baseImg = this._getImg(`t_base_${type}`);
-      const gunImg = this._getImg(`t_gun_${type}`);
-      if (baseImg) {
-        ctx.drawImage(baseImg, -baseImg.width / 2, -baseImg.height / 2);
-      }
-      if (gunImg) {
+      this._drawFrameCentered(ctx, `t_base_${type}`, 0, 0);
+      if (this._getFrame(`t_gun_${type}`)) {
         ctx.rotate(gunRad);
-        ctx.drawImage(gunImg, -gunImg.width / 2, -gunImg.height / 2 + recoil);
+        this._drawFrameCentered(ctx, `t_gun_${type}`, 0, recoil);
         ctx.restore();
         return;
       }
     }
 
-    // Rotating whole-body towers (Gatling Laser, Nullificator)
     if (type === BUILDING_TYPE.TOWER_1_4 || type === BUILDING_TYPE.TOWER_1_5) {
-      const img = this._getImg(`c_${type}`);
-      if (img) {
+      if (this._getFrame(`c_${type}`)) {
         ctx.rotate(gunRad);
-        ctx.drawImage(img, -img.width / 2, -img.height / 2 + (type === BUILDING_TYPE.TOWER_1_4 ? recoil : 0));
+        this._drawFrameCentered(ctx, `c_${type}`, 0, type === BUILDING_TYPE.TOWER_1_4 ? recoil : 0);
         ctx.restore();
         return;
       }
     }
 
-    // Static Tesla Tower & 2x2 Structures (11..15)
-    const img = this._getImg(`c_${type}`);
-    if (img) {
-      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+    if (this._drawFrameCentered(ctx, `c_${type}`, 0, 0)) {
       if (type === BUILDING_TYPE.TOWER_1_3) {
         const pulse = 0.25 + 0.15 * Math.sin(animTick * 0.28);
         ctx.fillStyle = `rgba(186, 230, 253, ${pulse})`;
@@ -426,7 +387,6 @@ export class GameRenderer {
       return;
     }
 
-    // Simple fallback rect before sprites load
     const meta = BUILDING_META[type];
     const sz = meta && meta.pattern && meta.pattern.width === 2 ? 52 : 26;
     ctx.fillStyle = '#475569';
@@ -437,9 +397,7 @@ export class GameRenderer {
   _drawEnemy(ctx, enemy, animTick) {
     const isAir = enemy.numAltitude === ALTITUDE_AIR;
     const angle = enemy.vectSpeed.getRadiansFromUp();
-    const sprite = this._getImg(`e_${enemy.numType}`);
 
-    // Air units cast a ground shadow
     if (isAir) {
       ctx.save();
       ctx.translate(enemy.x + 8, enemy.y + 10);
@@ -454,24 +412,18 @@ export class GameRenderer {
     ctx.save();
     ctx.translate(enemy.x, enemy.y);
     ctx.rotate(angle);
-    if (sprite) {
-      ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
-    } else {
+    if (!this._drawFrameCentered(ctx, `e_${enemy.numType}`, 0, 0)) {
       ctx.fillStyle = '#ca8a04';
       ctx.fillRect(-6, -8, 12, 16);
     }
     ctx.restore();
 
-    // Status effect sprite overlays
     ctx.save();
     ctx.translate(enemy.x, enemy.y);
 
     if (enemy.hasFast) {
       const f = (Math.floor(animTick / 2) % 3) + 1;
-      const ef = this._getImg(`ef_fast_${f}`);
-      if (ef) {
-        ctx.drawImage(ef, -14, -14, 28, 28);
-      }
+      this._drawFrameBox(ctx, `ef_fast_${f}`, -14, -14, 28, 28);
     }
     if (enemy.hasSlow) {
       if (enemy.hasTimeStop) {
@@ -484,25 +436,16 @@ export class GameRenderer {
         ctx.stroke();
       } else {
         const f = (Math.floor(animTick / 2) % 11) + 1;
-        const ef = this._getImg(`ef_slow_${f}`);
-        if (ef) {
-          ctx.drawImage(ef, -13, -13, 26, 26);
-        }
+        this._drawFrameBox(ctx, `ef_slow_${f}`, -13, -13, 26, 26);
       }
     }
     if (enemy.hasRepair) {
       const f = (Math.floor(animTick / 3) % 3) + 1;
-      const ef = this._getImg(`ef_repair_${f}`);
-      if (ef) {
-        ctx.drawImage(ef, -17, -17, 34, 34);
-      }
+      this._drawFrameBox(ctx, `ef_repair_${f}`, -17, -17, 34, 34);
     }
     if (enemy.hasShield) {
       const f = (Math.floor(animTick / 2) % 10) + 1;
-      const ef = this._getImg(`ef_shield_${f}`);
-      if (ef) {
-        ctx.drawImage(ef, -15, -15, 30, 30);
-      }
+      this._drawFrameBox(ctx, `ef_shield_${f}`, -15, -15, 30, 30);
     }
     if (enemy.hasConfuse) {
       ctx.strokeStyle = '#c084fc';
@@ -534,62 +477,54 @@ export class GameRenderer {
     ctx.translate(blast.x, blast.y);
     ctx.rotate(blast.vectSpeed.getRadiansFromUp());
 
-    let img = null;
+    let key = null;
     let scale = 1;
 
     switch (blast.numType) {
       case BLAST_TYPE.ROCKET:
-        img = this._getImg('blast_1');
+        key = 'blast_1';
         scale = 0.55;
         break;
-      case BLAST_TYPE.BALL: {
-        const f = (animTick % 12) + 1;
-        img = this._getImg(`blast_2_${f}`);
+      case BLAST_TYPE.BALL:
+        key = `blast_2_${(animTick % 12) + 1}`;
         scale = 0.85;
         break;
-      }
       case BLAST_TYPE.SLOWSHOT:
-        img = this._getImg('blast_3');
+        key = 'blast_3';
         scale = 0.65;
         break;
-      case BLAST_TYPE.NULIFYBALL: {
-        const f = (Math.floor(animTick / 2) % 3) + 1;
-        img = this._getImg(`blast_5_${f}`);
+      case BLAST_TYPE.NULIFYBALL:
+        key = `blast_5_${(Math.floor(animTick / 2) % 3) + 1}`;
         scale = 0.62;
         break;
-      }
-      case BLAST_TYPE.MISSILE: {
-        const f = (Math.floor(animTick / 2) % 3) + 1;
-        img = this._getImg(`blast_8_${f}`);
+      case BLAST_TYPE.MISSILE:
+        key = `blast_8_${(Math.floor(animTick / 2) % 3) + 1}`;
         scale = 0.9;
         break;
-      }
       case BLAST_TYPE.CHAINBLAST:
-        img = this._getImg('blast_9');
+        key = 'blast_9';
         scale = 0.52;
         break;
       case BLAST_TYPE.CONFUSEBALL:
-        img = this._getImg('blast_11');
+        key = 'blast_11';
         scale = 1;
         break;
       default:
         break;
     }
 
-    if (img) {
-      const w = img.width * scale;
-      const h = img.height * scale;
-      ctx.drawImage(img, -w / 2, -h / 2, w, h);
-    } else if (
-      blast.numType !== BLAST_TYPE.LASERBEAM &&
-      blast.numType !== BLAST_TYPE.GAUSSRAIL &&
-      blast.numType !== BLAST_TYPE.AASHELL &&
-      blast.numType !== BLAST_TYPE.ELECTRICFIELD
-    ) {
-      ctx.fillStyle = '#fde047';
-      ctx.beginPath();
-      ctx.arc(0, 0, 3.5, 0, Math.PI * 2);
-      ctx.fill();
+    if (!key || !this._drawFrameCentered(ctx, key, 0, 0, scale)) {
+      if (
+        blast.numType !== BLAST_TYPE.LASERBEAM &&
+        blast.numType !== BLAST_TYPE.GAUSSRAIL &&
+        blast.numType !== BLAST_TYPE.AASHELL &&
+        blast.numType !== BLAST_TYPE.ELECTRICFIELD
+      ) {
+        ctx.fillStyle = '#fde047';
+        ctx.beginPath();
+        ctx.arc(0, 0, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     ctx.restore();
@@ -600,71 +535,33 @@ export class GameRenderer {
     ctx.save();
 
     switch (fx.symbol) {
-      case 'explosion_big': {
-        const f = Math.min(15, fx.frame + 1);
-        const img = this._getImg(`gfx_explosion_big_${f}`);
-        if (img) {
-          ctx.drawImage(img, fx.x - img.width / 2, fx.y - img.height / 2);
-        }
+      case 'explosion_big':
+        this._drawFrameCentered(ctx, `gfx_explosion_big_${Math.min(15, fx.frame + 1)}`, fx.x, fx.y);
         break;
-      }
-      case 'explosion_medium': {
-        const f = Math.min(9, fx.frame + 1);
-        const img = this._getImg(`gfx_explosion_medium_${f}`);
-        if (img) {
-          ctx.drawImage(img, fx.x - img.width / 2, fx.y - img.height / 2);
-        }
+      case 'explosion_medium':
+        this._drawFrameCentered(ctx, `gfx_explosion_medium_${Math.min(9, fx.frame + 1)}`, fx.x, fx.y);
         break;
-      }
-      case 'explosion_small': {
-        const f = Math.min(9, fx.frame + 1);
-        const img = this._getImg(`gfx_explosion_small_${f}`);
-        if (img) {
-          ctx.drawImage(img, fx.x - img.width / 2, fx.y - img.height / 2);
-        }
+      case 'explosion_small':
+        this._drawFrameCentered(ctx, `gfx_explosion_small_${Math.min(9, fx.frame + 1)}`, fx.x, fx.y);
         break;
-      }
-      case 'missileblast': {
-        const f = Math.min(6, Math.floor(fx.frame / 2) + 1);
-        const img = this._getImg(`gfx_missileblast_${f}`);
-        if (img) {
-          ctx.drawImage(img, fx.x - img.width / 2, fx.y - img.height / 2);
-        }
+      case 'missileblast':
+        this._drawFrameCentered(ctx, `gfx_missileblast_${Math.min(6, Math.floor(fx.frame / 2) + 1)}`, fx.x, fx.y);
         break;
-      }
       case 'electricfield': {
         const f = Math.min(4, Math.floor((fx.frame / fx.maxFrames) * 4) + 1);
-        const img = this._getImg(`gfx_electricfield_${f}`);
         const d = (fx.radius || 60) * 2;
-        if (img) {
-          ctx.drawImage(img, fx.x - d / 2, fx.y - d / 2, d, d);
-        }
+        this._drawFrameBox(ctx, `gfx_electricfield_${f}`, fx.x - d / 2, fx.y - d / 2, d, d);
         break;
       }
-      case 'aablast': {
-        const f = Math.min(4, Math.floor((fx.frame / fx.maxFrames) * 4) + 1);
-        const img = this._getImg(`gfx_aablast_${f}`);
-        if (img) {
-          ctx.drawImage(img, fx.x - img.width / 2, fx.y - img.height / 2);
-        }
+      case 'aablast':
+        this._drawFrameCentered(ctx, `gfx_aablast_${Math.min(4, Math.floor((fx.frame / fx.maxFrames) * 4) + 1)}`, fx.x, fx.y);
         break;
-      }
-      case 'slowsplash': {
-        const f = Math.min(4, Math.floor((fx.frame / fx.maxFrames) * 4) + 1);
-        const img = this._getImg(`gfx_slowsplash_${f}`);
-        if (img) {
-          ctx.drawImage(img, fx.x - img.width / 2, fx.y - img.height / 2);
-        }
+      case 'slowsplash':
+        this._drawFrameCentered(ctx, `gfx_slowsplash_${Math.min(4, Math.floor((fx.frame / fx.maxFrames) * 4) + 1)}`, fx.x, fx.y);
         break;
-      }
-      case 'splash': {
-        const f = Math.min(4, Math.floor((fx.frame / fx.maxFrames) * 4) + 1);
-        const img = this._getImg(`gfx_splash_${f}`);
-        if (img) {
-          ctx.drawImage(img, fx.x - img.width / 2, fx.y - img.height / 2);
-        }
+      case 'splash':
+        this._drawFrameCentered(ctx, `gfx_splash_${Math.min(4, Math.floor((fx.frame / fx.maxFrames) * 4) + 1)}`, fx.x, fx.y);
         break;
-      }
       case 'laserbeam': {
         ctx.globalAlpha = 1 - p * 0.7;
         ctx.strokeStyle = 'rgba(239, 68, 68, 0.48)';

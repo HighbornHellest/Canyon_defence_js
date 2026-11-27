@@ -1,33 +1,6 @@
-// Web Audio API sound manager using original Canyon Defense MP3 assets with procedural fallback
+// Web Audio API sound manager using packed SFX audio sprite + looping mainLoop.mp3
 
 import { SOUND } from './constants.js';
-
-const SOUND_FILES = {
-  [SOUND.MAINLOOP]: '/assets/canyon/sounds/mainLoop.mp3',
-  [SOUND.QUEST]: '/assets/canyon/sounds/quest.mp3',
-  [SOUND.ERROR]: '/assets/canyon/sounds/error.mp3',
-  [SOUND.NUCLEAREXPLOSION]: '/assets/canyon/sounds/nuclearExplosion.mp3',
-  [SOUND.SWITCH]: '/assets/canyon/sounds/switch.mp3',
-  [SOUND.POPDEAD]: '/assets/canyon/sounds/popDead.mp3',
-  [SOUND.NUCLEARLAUNCH]: '/assets/canyon/sounds/nuclearLaunch.mp3',
-  [SOUND.TIMESTOP]: '/assets/canyon/sounds/timeStop.mp3',
-  [SOUND.CONSTRUCTION]: '/assets/canyon/sounds/construction.mp3',
-  [SOUND.SELL]: '/assets/canyon/sounds/sell.mp3',
-  [SOUND.BIGEXPLOSION]: '/assets/canyon/sounds/bigExplosion.mp3',
-  [SOUND.MEDIUMEXPLOSION]: '/assets/canyon/sounds/mediumExplosion.mp3',
-  [SOUND.SMALLEXPLOSION]: '/assets/canyon/sounds/smallExplosion.mp3',
-  [SOUND.NULIFICATORSHOT]: '/assets/canyon/sounds/NulificatorShot.mp3',
-  [SOUND.TESLATOWERSHOT]: '/assets/canyon/sounds/teslaTowerShot.mp3',
-  [SOUND.GAUSSCANNONSHOT]: '/assets/canyon/sounds/gaussCannonShot.mp3',
-  [SOUND.GUTLINGLASERSHOT]: '/assets/canyon/sounds/gutlingLaserShot.mp3',
-  [SOUND.OILSPRAYSHOT]: '/assets/canyon/sounds/oilSprayShot.mp3',
-  [SOUND.CHAINGUNSHOT]: '/assets/canyon/sounds/chainGunShot.mp3',
-  [SOUND.GOOCANNONSHOT]: '/assets/canyon/sounds/gooCannonShot.mp3',
-  [SOUND.MORTARSHOT]: '/assets/canyon/sounds/mortarShot.mp3',
-  [SOUND.AAGUNSHOT]: '/assets/canyon/sounds/aaGunShot.mp3',
-  [SOUND.MISSILETURRETSHOT]: '/assets/canyon/sounds/missileTurretShot.mp3',
-  [SOUND.HIT]: '/assets/canyon/sounds/hit.mp3',
-};
 
 class SoundManager {
   constructor() {
@@ -38,8 +11,11 @@ class SoundManager {
     this.musicVolume = 0.55;
     this.inMission = false;
 
-    this.buffers = new Map();
-    this.loadingPromises = new Map();
+    this.sfxManifest = null;
+    this.sfxBuffer = null;
+    this.sfxPromise = null;
+    this.musicBuffer = null;
+    this.musicPromise = null;
     this.lastPlayed = new Map();
 
     this.musicSource = null;
@@ -74,34 +50,37 @@ class SoundManager {
   }
 
   preloadAll() {
-    for (const [idStr, url] of Object.entries(SOUND_FILES)) {
-      const id = Number(idStr);
-      this._loadBuffer(id, url);
-    }
+    this._loadSfxSprite();
+    this._loadMusic();
   }
 
-  _loadBuffer(soundId, url) {
-    if (this.buffers.has(soundId)) {
-      return Promise.resolve(this.buffers.get(soundId));
-    }
-    if (this.loadingPromises.has(soundId)) {
-      return this.loadingPromises.get(soundId);
-    }
-    const p = fetch(url)
-      .then((res) => (res.ok ? res.arrayBuffer() : null))
-      .then((ab) => {
-        if (!ab || !this.ctx) return null;
-        return this.ctx.decodeAudioData(ab);
+  _loadSfxSprite() {
+    if (this.sfxPromise) return this.sfxPromise;
+    this.sfxPromise = Promise.all([
+      fetch('/assets/canyon/sounds/sfx.json').then((r) => (r.ok ? r.json() : null)),
+      fetch('/assets/canyon/sounds/sfx.mp3').then((r) => (r.ok ? r.arrayBuffer() : null)),
+    ])
+      .then(async ([manifest, ab]) => {
+        if (!manifest || !ab || !this.ctx) return null;
+        this.sfxManifest = manifest;
+        this.sfxBuffer = await this.ctx.decodeAudioData(ab);
+        return this.sfxBuffer;
       })
+      .catch(() => null);
+    return this.sfxPromise;
+  }
+
+  _loadMusic() {
+    if (this.musicPromise) return this.musicPromise;
+    this.musicPromise = fetch('/assets/canyon/sounds/mainLoop.mp3')
+      .then((r) => (r.ok ? r.arrayBuffer() : null))
+      .then((ab) => (ab && this.ctx ? this.ctx.decodeAudioData(ab) : null))
       .then((decoded) => {
-        if (decoded) {
-          this.buffers.set(soundId, decoded);
-        }
+        if (decoded) this.musicBuffer = decoded;
         return decoded;
       })
       .catch(() => null);
-    this.loadingPromises.set(soundId, p);
-    return p;
+    return this.musicPromise;
   }
 
   _syncGains() {
@@ -125,7 +104,7 @@ class SoundManager {
     if (!ctx || this.musicStarted) return;
     this.musicStarted = true;
 
-    this._loadBuffer(SOUND.MAINLOOP, SOUND_FILES[SOUND.MAINLOOP]).then((buf) => {
+    this._loadMusic().then((buf) => {
       if (!buf || !this.ctx || this.musicSource) return;
       const src = this.ctx.createBufferSource();
       src.buffer = buf;
@@ -196,10 +175,11 @@ class SoundManager {
       this.startMusicLoop();
     }
 
-    const buf = this.buffers.get(soundId);
-    if (buf) {
+    const span = this.sfxManifest ? this.sfxManifest[String(soundId)] : null;
+    if (this.sfxBuffer && span) {
+      const [startSec, durSec] = span;
       const src = ctx.createBufferSource();
-      src.buffer = buf;
+      src.buffer = this.sfxBuffer;
       if (soundId === SOUND.HIT) {
         const gain = ctx.createGain();
         gain.gain.value = 0.35;
@@ -208,11 +188,11 @@ class SoundManager {
       } else {
         src.connect(this.sfxGain);
       }
-      src.start(0);
+      src.start(0, startSec, durSec);
       return;
     }
 
-    // Fallback synth while MP3 buffers are still decoding
+    // Fallback synth while sfx.mp3 decodes
     this._playFallbackSynth(ctx, soundId);
   }
 
