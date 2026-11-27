@@ -94,6 +94,7 @@ export class CanyonGame {
     if (newState !== STATE.MISSION) {
       this.stopLoop();
     }
+    soundService.setMusicMissionMode(newState === STATE.MISSION);
     this.callbacks.onStateChange(newState);
   }
 
@@ -242,6 +243,9 @@ export class CanyonGame {
     this.cursor.buildingType = type;
     this.cursor.buildingMeta = BUILDING_META[type];
     this.cursor.abilityType = null;
+    this.cursor.cell.free =
+      !this.cursor.cell.out &&
+      this.map.checkPlacingSpace(this.cursor.cell.i, this.cursor.cell.j, this.cursor.buildingMeta.pattern);
     this.map.showGrid = !this.cursor.cell.out;
     soundService.play(SOUND.SWITCH);
     this.callbacks.onHudUpdate();
@@ -308,7 +312,8 @@ export class CanyonGame {
     this.cursor.cell = cell;
 
     if (this.cursor.mode === 'building') {
-      cell.free = !cell.out && this.map.checkPlacingSpace(cell.i, cell.j);
+      const pattern = this.cursor.buildingMeta?.pattern;
+      cell.free = !cell.out && this.map.checkPlacingSpace(cell.i, cell.j, pattern);
       this.map.showGrid = !cell.out;
     } else if (this.cursor.mode === 'ability') {
       if (this.cursor.abilityType === ABILITY_TYPE.WALL) {

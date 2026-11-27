@@ -29,11 +29,11 @@ export class Building {
   constructor(type, cellI = 0, cellJ = 0) {
     this.numType = type;
     this.meta = BUILDING_META[type];
+    this.pattern = this.meta.pattern || { width: 1, height: 1, cells: [1] };
     this.cellI = cellI;
     this.cellJ = cellJ;
-    this.x = cellJ * MATRIX_CELL_WIDTH + MATRIX_CELL_WIDTH / 2;
-    this.y = cellI * MATRIX_CELL_HEIGHT + MATRIX_CELL_HEIGHT / 2;
-    this.pattern = { width: 1, height: 1, cells: [1] };
+    this.x = (cellJ + this.pattern.width / 2) * MATRIX_CELL_WIDTH;
+    this.y = (cellI + this.pattern.height / 2) * MATRIX_CELL_HEIGHT;
     this.isTower = this.meta.isTower;
     this.baseRange = this.meta.range || 0;
     this.turnSpeed = this.meta.turnSpeed || 0;
@@ -56,8 +56,8 @@ export class Building {
   setCell(i, j) {
     this.cellI = i;
     this.cellJ = j;
-    this.x = j * MATRIX_CELL_WIDTH + MATRIX_CELL_WIDTH / 2;
-    this.y = i * MATRIX_CELL_HEIGHT + MATRIX_CELL_HEIGHT / 2;
+    this.x = (j + this.pattern.width / 2) * MATRIX_CELL_WIDTH;
+    this.y = (i + this.pattern.height / 2) * MATRIX_CELL_HEIGHT;
   }
 
   process(map, callbacks) {

@@ -232,13 +232,13 @@ export class GameMap {
     const idx = this.buildings.indexOf(building);
     if (idx === -1) return;
 
-    const hasWallUnder = this.walls.some((w) => w.i === building.cellI && w.j === building.cellJ);
     for (let r = 0; r < building.pattern.height; r++) {
       for (let c = 0; c < building.pattern.width; c++) {
         if (building.pattern.cells[r * building.pattern.width + c] === 1) {
-          this.matrixPattern[(r + building.cellI) * this.width + (c + building.cellJ)] = hasWallUnder
-            ? CELL_WALL
-            : CELL_ROCK;
+          const ci = r + building.cellI;
+          const cj = c + building.cellJ;
+          const hasWallUnder = this.walls.some((w) => w.i === ci && w.j === cj);
+          this.matrixPattern[ci * this.width + cj] = hasWallUnder ? CELL_WALL : CELL_ROCK;
         }
       }
     }

@@ -15,7 +15,23 @@ import { soundService } from './game/sound.js';
 import './index.css';
 
 const root = document.getElementById('app');
-const renderer = new GameRenderer();
+
+function redrawStaticCanvases() {
+  root.querySelectorAll('canvas[data-preview-map]').forEach((canvas) => {
+    renderer.renderMapPreview(canvas, Number(canvas.getAttribute('data-preview-map')));
+  });
+  root.querySelectorAll('canvas[data-guide-icon]').forEach((canvas) => {
+    renderer.drawBuildingIcon(canvas, Number(canvas.getAttribute('data-guide-icon')));
+  });
+  root.querySelectorAll('canvas[data-slot-icon]').forEach((canvas) => {
+    renderer.drawBuildingIcon(canvas, Number(canvas.getAttribute('data-slot-icon')));
+  });
+  root.querySelectorAll('canvas[data-ability-icon]').forEach((canvas) => {
+    renderer.drawAbilityIcon(canvas, Number(canvas.getAttribute('data-ability-icon')));
+  });
+}
+
+const renderer = new GameRenderer(redrawStaticCanvases);
 
 let quitDialogOpen = false;
 let missionDom = null;
@@ -213,7 +229,9 @@ function renderMainScreen() {
 
 function renderOptionsScreen() {
   const muted = soundService.isMuted();
-  const volPct = Math.round(soundService.sfxVolume * 100);
+  const musicOn = soundService.isMusicEnabled();
+  const sfxPct = Math.round(soundService.sfxVolume * 100);
+  const musicPct = Math.round(soundService.musicVolume * 100);
 
   root.innerHTML = `
     <div class="min-h-screen flex flex-col bg-[#17130f] text-[#f3eadc]">
@@ -230,8 +248,8 @@ function renderOptionsScreen() {
         <div class="p-6 rounded-lg border border-[#3d3226] bg-[#231d17] flex flex-col gap-6">
           <div class="flex items-center justify-between gap-4">
             <div>
-              <div class="text-base font-semibold">Synthesized Sound Effects</div>
-              <div class="text-xs text-[#a99882] mt-0.5">Toggle all combat, construction, and alert audio</div>
+              <div class="text-base font-semibold">Master Sound</div>
+              <div class="text-xs text-[#a99882] mt-0.5">Mute or enable all game sound effects and music</div>
             </div>
             <button type="button" id="btn-toggle-mute" class="btn-tactical px-4 py-2 rounded-md font-semibold text-sm cursor-pointer ${
               muted ? 'bg-red-900/50 border border-red-600 text-red-200' : 'bg-amber-500 text-[#17130f]'
@@ -240,14 +258,37 @@ function renderOptionsScreen() {
             </button>
           </div>
 
+          <div class="border-t border-[#342a20] pt-5 flex items-center justify-between gap-4">
+            <div>
+              <div class="text-base font-semibold">Background Music</div>
+              <div class="text-xs text-[#a99882] mt-0.5">Loop canyon theme (auto-ducks during missions)</div>
+            </div>
+            <button type="button" id="btn-toggle-music" class="btn-tactical px-4 py-2 rounded-md font-semibold text-sm cursor-pointer ${
+              !musicOn ? 'bg-[#1c1712] border border-[#4a3d2e] text-[#a99882]' : 'bg-amber-500 text-[#17130f]'
+            }">
+              ${musicOn ? 'Music On' : 'Music Off'}
+            </button>
+          </div>
+
           <div class="border-t border-[#342a20] pt-5 flex items-center justify-between gap-6">
             <div>
               <div class="text-base font-semibold">Effects Volume</div>
-              <div class="text-xs text-[#a99882] mt-0.5">Adjust Web Audio synthesizer output</div>
+              <div class="text-xs text-[#a99882] mt-0.5">Weapon fire, explosions, and UI alerts</div>
             </div>
             <div class="flex items-center gap-3 w-56">
-              <input id="range-volume" type="range" min="0" max="100" value="${volPct}" class="w-full accent-amber-500 cursor-pointer" />
-              <span id="lbl-volume" class="font-mono-num text-xs w-10 text-right">${volPct}%</span>
+              <input id="range-volume" type="range" min="0" max="100" value="${sfxPct}" class="w-full accent-amber-500 cursor-pointer" />
+              <span id="lbl-volume" class="font-mono-num text-xs w-10 text-right">${sfxPct}%</span>
+            </div>
+          </div>
+
+          <div class="border-t border-[#342a20] pt-5 flex items-center justify-between gap-6">
+            <div>
+              <div class="text-base font-semibold">Music Volume</div>
+              <div class="text-xs text-[#a99882] mt-0.5">Main soundtrack level</div>
+            </div>
+            <div class="flex items-center gap-3 w-56">
+              <input id="range-music-volume" type="range" min="0" max="100" value="${musicPct}" class="w-full accent-amber-500 cursor-pointer" />
+              <span id="lbl-music-volume" class="font-mono-num text-xs w-10 text-right">${musicPct}%</span>
             </div>
           </div>
         </div>
@@ -266,6 +307,12 @@ function renderOptionsScreen() {
     renderOptionsScreen();
   });
 
+  document.getElementById('btn-toggle-music').addEventListener('click', () => {
+    soundService.setMusicEnabled(!soundService.isMusicEnabled());
+    soundService.play(SOUND.SWITCH);
+    renderOptionsScreen();
+  });
+
   const slider = document.getElementById('range-volume');
   const lbl = document.getElementById('lbl-volume');
   slider.addEventListener('input', () => {
@@ -275,6 +322,14 @@ function renderOptionsScreen() {
   });
   slider.addEventListener('change', () => {
     soundService.play(SOUND.SWITCH);
+  });
+
+  const musicSlider = document.getElementById('range-music-volume');
+  const musicLbl = document.getElementById('lbl-music-volume');
+  musicSlider.addEventListener('input', () => {
+    const v = Number(musicSlider.value);
+    soundService.setMusicVolume(v / 100);
+    musicLbl.textContent = `${v}%`;
   });
 }
 
@@ -975,6 +1030,13 @@ window.addEventListener('keydown', (e) => {
     updateInspector();
   }
 });
+
+// Unlock Web Audio & start background music loop on first user interaction
+const unlockAudioOnce = () => {
+  soundService.unlock();
+};
+window.addEventListener('pointerdown', unlockAudioOnce, { once: true });
+window.addEventListener('keydown', unlockAudioOnce, { once: true });
 
 // Boot directly into Main Screen
 renderCurrentState(STATE.MAINSCREEN);
