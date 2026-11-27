@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+:root {
+  --font-display: "Barlow Condensed", sans-serif;
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  font-family: var(--font-sans);
+  background-color: #17130f;
+  color: #f3eadc;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom crisp scrollbar for sub-panels */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1f1a15;
+}
+::-webkit-scrollbar-thumb {
+  background: #4b3e30;
+  border-radius: 3px;
+}
+
+.game-canvas {
+  image-rendering: auto;
+  touch-action: none;
+}
+
+.btn-tactical {
+  transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 140ms ease, border-color 140ms ease, opacity 140ms ease;
+}
+
+.btn-tactical:active:not(:disabled) {
+  transform: translateY(1px);
+}

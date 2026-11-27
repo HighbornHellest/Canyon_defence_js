@@ -1,0 +1,6 @@
+{
+  "name": "Canyon Defense",
+  "description": "Classic Flash tactical canyon tower defense remade in pure vanilla JavaScript and HTML5 Canvas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
